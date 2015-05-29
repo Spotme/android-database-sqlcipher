@@ -32,11 +32,11 @@
 #include <jni.h>
 
 
-#define DEFAULT_WINDOW_SIZE 4096
-#define MAX_WINDOW_SIZE (1024 * 1024)
-#define WINDOW_ALLOCATION_SIZE 4096
+#define DEFAULT_WINDOW_SIZE (4 * 4096)
+#define MAX_WINDOW_SIZE (4 * 1024 * 1024)
+#define WINDOW_ALLOCATION_SIZE (4 * 4096)
 
-#define ROW_SLOT_CHUNK_NUM_ROWS 16
+#define ROW_SLOT_CHUNK_NUM_ROWS (4 * 16)
 
 // Row slots are allocated in chunks of ROW_SLOT_CHUNK_NUM_ROWS,
 // with an offset after the rows that points to the next chunk
