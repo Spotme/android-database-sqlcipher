@@ -410,17 +410,17 @@ public class SQLiteDatabase extends SQLiteClosable {
         Log.e(TAG, "Database is corrupted");
         // Log.e(TAG, "Removing corrupt database: " + mPath);
         //    EventLog.writeEvent(EVENT_DB_CORRUPT, mPath);
-        try {
-            // Close the database (if we can), which will cause subsequent operations to fail.
-            close();
-        } finally {
-            // Delete the corrupt file.  Don't re-create it now -- that would just confuse people
-            // -- but the next time someone tries to open it, they can set it up from scratch.
-            // if (!mPath.equalsIgnoreCase(":memory")) {
-            //     // delete is only for non-memory database files
-            //     new File(mPath).delete();
-            // }
-        }
+        // try {
+        //     // Close the database (if we can), which will cause subsequent operations to fail.
+        //     close();
+        // } finally {
+        //     // Delete the corrupt file.  Don't re-create it now -- that would just confuse people
+        //     // -- but the next time someone tries to open it, they can set it up from scratch.
+        //     // if (!mPath.equalsIgnoreCase(":memory")) {
+        //     //     // delete is only for non-memory database files
+        //     //     new File(mPath).delete();
+        //     // }
+        // }
     }
 
     /**
