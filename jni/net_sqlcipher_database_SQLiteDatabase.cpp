@@ -17,32 +17,31 @@
 #undef LOG_TAG
 #define LOG_TAG "Database"
 
-#include <utils/Log.h>
-
 #include <jni.h>
-#include <JNIHelp.h>
-#include <android_runtime/AndroidRuntime.h>
-
 #include <sqlite3.h>
-#include <sqlite3_android.h>
-
-#include <utils/Log.h>
-#include <utils/threads.h>
-#include <utils/List.h>
-#include <utils/Errors.h>
-
 #include <ctype.h>
-
 #include <stdio.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/ioctl.h>
 
-#include <unicode/utypes.h>
-#include <unicode/ucnv.h>
-#include <unicode/ucnv_err.h>
-
+#include "log.h"
+#include "jni_elements.h"
+#include "jni_exception.h"
 #include "sqlite3_exception.h"
 #include "sqlcipher_loading.h"
+
+// #include <utils/Log.h>
+// #include <JNIHelp.h>
+// #include <android_runtime/AndroidRuntime.h>
+// #include <sqlite3_android.h>
+// #include <utils/Log.h>
+// #include <utils/threads.h>
+// #include <utils/List.h>
+// #include <utils/Errors.h>
+// #include <unicode/utypes.h>
+// #include <unicode/ucnv.h>
+// #include <unicode/ucnv_err.h>
 
 #define UTF16_STORAGE 0
 #define INVALID_VERSION -1
@@ -70,7 +69,7 @@ static char *createStr(const char *path) {
     int len = strlen(path);
     char *str = (char *)malloc(len + 1);
     strncpy(str, path, len);
-    str[len] = NULL;
+    str[len] = 0;
     return str;
 }
 
@@ -108,51 +107,72 @@ int native_status(JNIEnv* env, jobject object, jint operation, jboolean reset)
   return value;
 }
 
-void native_key_char(JNIEnv* env, jobject object, jcharArray jKey)
-{
-  char *keyUtf8        = 0;
-  int lenUtf8          = 0;
-  jchar* keyUtf16      = 0;
-  jsize lenUtf16       = 0;
-  UErrorCode status    = U_ZERO_ERROR;
-  UConverter *encoding = 0;
+// void native_key_char(JNIEnv* env, jobject object, jcharArray jKey)
+// {
+//   char *keyUtf8        = 0;
+//   int lenUtf8          = 0;
+//   jchar* keyUtf16      = 0;
+//   jsize lenUtf16       = 0;
+//   UErrorCode status    = U_ZERO_ERROR;
+//   UConverter *encoding = 0;
 
-  sqlite3 * handle = (sqlite3 *)env->GetIntField(object, offset_db_handle);
+//   sqlite3 * handle = (sqlite3 *)env->GetIntField(object, offset_db_handle);
 
-  keyUtf16 = env->GetCharArrayElements(jKey, 0);
-  lenUtf16 = env->GetArrayLength(jKey);
+//   keyUtf16 = env->GetCharArrayElements(jKey, 0);
+//   lenUtf16 = env->GetArrayLength(jKey);
 
-  // no key, bailing out.
-  if ( lenUtf16 == 0 ) goto done;
+//   // no key, bailing out.
+//   if ( lenUtf16 == 0 ) goto done;
 
-  encoding = ucnv_open("UTF-8", &status);
-  if( U_FAILURE(status) ) {
-    throw_sqlite3_exception(env, "native_key_char: opening encoding converter failed");
-    goto done;
+//   encoding = ucnv_open("UTF-8", &status);
+//   if( U_FAILURE(status) ) {
+//     throw_sqlite3_exception(env, "native_key_char: opening encoding converter failed");
+//     goto done;
+//   }
+
+//   lenUtf8 = ucnv_fromUChars(encoding, NULL, 0, keyUtf16, lenUtf16, &status);
+//   status = (status == U_BUFFER_OVERFLOW_ERROR) ? U_ZERO_ERROR : status;
+//   if( U_FAILURE(status) ) {
+//     throw_sqlite3_exception(env, "native_key_char: utf8 length unknown");
+//     goto done;
+//   }
+
+//   keyUtf8 = (char*) malloc(lenUtf8 * sizeof(char));
+//   ucnv_fromUChars(encoding, keyUtf8, lenUtf8, keyUtf16, lenUtf16, &status);
+//   if( U_FAILURE(status) ) {
+//     throw_sqlite3_exception(env, "native_key_char: utf8 conversion failed");
+//     goto done;
+//   }
+
+//   if ( sqlite3_key(handle, keyUtf8, lenUtf8) != SQLITE_OK ) {
+//     throw_sqlite3_exception(env, handle);
+//   }
+
+// done:
+//   env->ReleaseCharArrayElements(jKey, keyUtf16, 0);
+//   if(encoding != 0) ucnv_close(encoding);
+//   if(keyUtf8 != 0)  free(keyUtf8);
+// }
+
+void native_key_char(JNIEnv* env, jobject object, jcharArray jKey) {
+  int rc;
+  int idx;
+  LOGI("Entered native_key_char");
+  sqlite3 *handle = (sqlite3 *)env->GetIntField(object, offset_db_handle);
+  jchar *key = env->GetCharArrayElements(jKey, 0);
+  jsize sz = env->GetArrayLength(jKey);
+  char password[sz + 1];
+  for(idx = 0; idx < sz; idx++){
+    password[idx] = (char)key[idx];
   }
-
-  lenUtf8 = ucnv_fromUChars(encoding, NULL, 0, keyUtf16, lenUtf16, &status);
-  status = (status == U_BUFFER_OVERFLOW_ERROR) ? U_ZERO_ERROR : status;
-  if( U_FAILURE(status) ) {
-    throw_sqlite3_exception(env, "native_key_char: utf8 length unknown");
-    goto done;
+  password[sz] = '\0';
+  if(sz > 0){
+    rc = sqlite3_key(handle, password, sz);
+    if(rc != SQLITE_OK){
+      throw_sqlite3_exception(env, handle);
+    }
   }
-
-  keyUtf8 = (char*) malloc(lenUtf8 * sizeof(char));
-  ucnv_fromUChars(encoding, keyUtf8, lenUtf8, keyUtf16, lenUtf16, &status);
-  if( U_FAILURE(status) ) {
-    throw_sqlite3_exception(env, "native_key_char: utf8 conversion failed");
-    goto done;
-  }
-
-  if ( sqlite3_key(handle, keyUtf8, lenUtf8) != SQLITE_OK ) {
-    throw_sqlite3_exception(env, handle);
-  }
-
-done:
-  env->ReleaseCharArrayElements(jKey, keyUtf16, 0);
-  if(encoding != 0) ucnv_close(encoding);
-  if(keyUtf8 != 0)  free(keyUtf8);
+  env->ReleaseCharArrayElements(jKey, key, 0);
 }
 
 void native_key_str(JNIEnv* env, jobject object, jstring jKey)
@@ -171,51 +191,51 @@ void native_key_str(JNIEnv* env, jobject object, jstring jKey)
   env->ReleaseStringUTFChars(jKey, key);
 }
 
-void native_rekey_char(JNIEnv* env, jobject object, jcharArray jKey)
-{
-  char *keyUtf8        = 0;
-  int lenUtf8          = 0;
-  jchar* keyUtf16      = 0;
-  jsize lenUtf16       = 0;
-  UErrorCode status    = U_ZERO_ERROR;
-  UConverter *encoding = 0;
+// void native_rekey_char(JNIEnv* env, jobject object, jcharArray jKey)
+// {
+//   char *keyUtf8        = 0;
+//   int lenUtf8          = 0;
+//   jchar* keyUtf16      = 0;
+//   jsize lenUtf16       = 0;
+//   UErrorCode status    = U_ZERO_ERROR;
+//   UConverter *encoding = 0;
 
-  sqlite3 * handle = (sqlite3 *)env->GetIntField(object, offset_db_handle);
+//   sqlite3 * handle = (sqlite3 *)env->GetIntField(object, offset_db_handle);
 
-  keyUtf16 = env->GetCharArrayElements(jKey, 0);
-  lenUtf16 = env->GetArrayLength(jKey);
+//   keyUtf16 = env->GetCharArrayElements(jKey, 0);
+//   lenUtf16 = env->GetArrayLength(jKey);
 
-  if ( lenUtf16 == 0 ) goto done;
+//   if ( lenUtf16 == 0 ) goto done;
 
-  encoding = ucnv_open("UTF-8", &status);
-  if( U_FAILURE(status) ) {
-    throw_sqlite3_exception(env, "native_key_char: opening encoding converter failed");
-    goto done;
-  }
+//   encoding = ucnv_open("UTF-8", &status);
+//   if( U_FAILURE(status) ) {
+//     throw_sqlite3_exception(env, "native_key_char: opening encoding converter failed");
+//     goto done;
+//   }
 
-  lenUtf8 = ucnv_fromUChars(encoding, NULL, 0, keyUtf16, lenUtf16, &status);
-  status = (status == U_BUFFER_OVERFLOW_ERROR) ? U_ZERO_ERROR : status;
-  if( U_FAILURE(status) ) {
-    throw_sqlite3_exception(env, "native_key_char: utf8 length unknown");
-    goto done;
-  }
+//   lenUtf8 = ucnv_fromUChars(encoding, NULL, 0, keyUtf16, lenUtf16, &status);
+//   status = (status == U_BUFFER_OVERFLOW_ERROR) ? U_ZERO_ERROR : status;
+//   if( U_FAILURE(status) ) {
+//     throw_sqlite3_exception(env, "native_key_char: utf8 length unknown");
+//     goto done;
+//   }
 
-  keyUtf8 = (char*) malloc(lenUtf8 * sizeof(char));
-  ucnv_fromUChars(encoding, keyUtf8, lenUtf8, keyUtf16, lenUtf16, &status);
-  if( U_FAILURE(status) ) {
-    throw_sqlite3_exception(env, "native_key_char: utf8 conversion failed");
-    goto done;
-  }
+//   keyUtf8 = (char*) malloc(lenUtf8 * sizeof(char));
+//   ucnv_fromUChars(encoding, keyUtf8, lenUtf8, keyUtf16, lenUtf16, &status);
+//   if( U_FAILURE(status) ) {
+//     throw_sqlite3_exception(env, "native_key_char: utf8 conversion failed");
+//     goto done;
+//   }
 
-  if ( sqlite3_rekey(handle, keyUtf8, lenUtf8) != SQLITE_OK ) {
-    throw_sqlite3_exception(env, handle);
-  }
+//   if ( sqlite3_rekey(handle, keyUtf8, lenUtf8) != SQLITE_OK ) {
+//     throw_sqlite3_exception(env, handle);
+//   }
 
-done:
-  env->ReleaseCharArrayElements(jKey, keyUtf16, 0);
-  if(encoding != 0) ucnv_close(encoding);
-  if(keyUtf8 != 0)  free(keyUtf8);
-}
+// done:
+//   env->ReleaseCharArrayElements(jKey, keyUtf16, 0);
+//   if(encoding != 0) ucnv_close(encoding);
+//   if(keyUtf8 != 0)  free(keyUtf8);
+// }
 
 void native_rekey_str(JNIEnv* env, jobject object, jstring jKey)
 {
@@ -245,12 +265,12 @@ void native_rawExecSQL(JNIEnv* env, jobject object, jstring sql)
 }
 
 /* public native void setICURoot(String path); */
-void setICURoot(JNIEnv* env, jobject object, jstring ICURoot)
-{
-  char const * ICURootPath = env->GetStringUTFChars(ICURoot, NULL);
-  setenv("SQLCIPHER_ICU_PREFIX", ICURootPath, 1);
-  env->ReleaseStringUTFChars(ICURoot, ICURootPath);
-}
+// void setICURoot(JNIEnv* env, jobject object, jstring ICURoot)
+// {
+//   char const * ICURootPath = env->GetStringUTFChars(ICURoot, NULL);
+//   setenv("SQLCIPHER_ICU_PREFIX", ICURootPath, 1);
+//   env->ReleaseStringUTFChars(ICURoot, ICURootPath);
+// }
 
 
 /* public native void dbopen(String path, int flags, String locale); */
@@ -324,12 +344,6 @@ void dbopen(JNIEnv* env, jobject object, jstring pathString, jint flags)
         }
     }
 #endif
-
-    err = register_android_functions(handle, UTF16_STORAGE);
-    if (err) {
-        throw_sqlite3_exception(env, handle, "Could not register Android SQL functions.");
-        goto done;
-    }
 
     sqlite3_enable_load_extension(handle, 1);
     
@@ -486,124 +500,124 @@ static jint native_getDbLookaside(JNIEnv* env, jobject object)
 }
 
 /* set locale in the android_metadata table, install localized collators, and rebuild indexes */
-static void native_setLocale(JNIEnv* env, jobject object, jstring localeString, jint flags)
-{
-    if ((flags & NO_LOCALIZED_COLLATORS)) return;
+// static void native_setLocale(JNIEnv* env, jobject object, jstring localeString, jint flags)
+// {
+//     if ((flags & NO_LOCALIZED_COLLATORS)) return;
 
-    int err;
-    char const* locale8 = env->GetStringUTFChars(localeString, NULL);
-    sqlite3 * handle = (sqlite3 *)env->GetIntField(object, offset_db_handle);
-    sqlite3_stmt* stmt = NULL;
-    char** meta = NULL;
-    int rowCount, colCount;
-    char* dbLocale = NULL;
+//     int err;
+//     char const* locale8 = env->GetStringUTFChars(localeString, NULL);
+//     sqlite3 * handle = (sqlite3 *)env->GetIntField(object, offset_db_handle);
+//     sqlite3_stmt* stmt = NULL;
+//     char** meta = NULL;
+//     int rowCount, colCount;
+//     char* dbLocale = NULL;
 
-    // create the table, if necessary and possible
-    if (!(flags & OPEN_READONLY)) {
-        static const char *createSql ="CREATE TABLE IF NOT EXISTS " ANDROID_TABLE " (locale TEXT)";
-        err = sqlite3_exec(handle, createSql, NULL, NULL, NULL);
-        if (err != SQLITE_OK) {
-            LOGE("CREATE TABLE " ANDROID_TABLE " failed\n");
-            throw_sqlite3_exception(env, handle, "create locale table failed");
-            goto done;
-        }
-    }
+//     // create the table, if necessary and possible
+//     if (!(flags & OPEN_READONLY)) {
+//         static const char *createSql ="CREATE TABLE IF NOT EXISTS " ANDROID_TABLE " (locale TEXT)";
+//         err = sqlite3_exec(handle, createSql, NULL, NULL, NULL);
+//         if (err != SQLITE_OK) {
+//             LOGE("CREATE TABLE " ANDROID_TABLE " failed\n");
+//             throw_sqlite3_exception(env, handle, "create locale table failed");
+//             goto done;
+//         }
+//     }
 
-    // try to read from the table
-    static const char *selectSql = "SELECT locale FROM " ANDROID_TABLE " LIMIT 1";
-    err = sqlite3_get_table(handle, selectSql, &meta, &rowCount, &colCount, NULL);
-    if (err != SQLITE_OK) {
-        LOGE("SELECT locale FROM " ANDROID_TABLE " failed\n");
-        throw_sqlite3_exception(env, handle, "select locale failed");
-        goto done;
-    }
+//     // try to read from the table
+//     static const char *selectSql = "SELECT locale FROM " ANDROID_TABLE " LIMIT 1";
+//     err = sqlite3_get_table(handle, selectSql, &meta, &rowCount, &colCount, NULL);
+//     if (err != SQLITE_OK) {
+//         LOGE("SELECT locale FROM " ANDROID_TABLE " failed\n");
+//         throw_sqlite3_exception(env, handle, "select locale failed");
+//         goto done;
+//     }
 
-    dbLocale = (rowCount >= 1) ? meta[colCount] : NULL;
+//     dbLocale = (rowCount >= 1) ? meta[colCount] : NULL;
 
-    if (dbLocale != NULL && !strcmp(dbLocale, locale8)) {
-        // database locale is the same as the desired locale; set up the collators and go
-        err = register_localized_collators(handle, locale8, UTF16_STORAGE);
-        if (err != SQLITE_OK) throw_sqlite3_exception(env, handle);
-        goto done;   // no database changes needed
-    }
+//     if (dbLocale != NULL && !strcmp(dbLocale, locale8)) {
+//         // database locale is the same as the desired locale; set up the collators and go
+//         err = register_localized_collators(handle, locale8, UTF16_STORAGE);
+//         if (err != SQLITE_OK) throw_sqlite3_exception(env, handle);
+//         goto done;   // no database changes needed
+//     }
 
-    if ((flags & OPEN_READONLY)) {
-        // read-only database, so we're going to have to put up with whatever we got
-        // For registering new index. Not for modifing the read-only database.
-        err = register_localized_collators(handle, locale8, UTF16_STORAGE);
-        if (err != SQLITE_OK) throw_sqlite3_exception(env, handle, "register localized collators failed");
-        goto done;
-    }
+//     if ((flags & OPEN_READONLY)) {
+//         // read-only database, so we're going to have to put up with whatever we got
+//         // For registering new index. Not for modifing the read-only database.
+//         err = register_localized_collators(handle, locale8, UTF16_STORAGE);
+//         if (err != SQLITE_OK) throw_sqlite3_exception(env, handle, "register localized collators failed");
+//         goto done;
+//     }
 
-    // need to update android_metadata and indexes atomically, so use a transaction...
-    err = sqlite3_exec(handle, "BEGIN TRANSACTION", NULL, NULL, NULL);
-    if (err != SQLITE_OK) {
-        LOGE("BEGIN TRANSACTION failed setting locale\n");
-        throw_sqlite3_exception(env, handle, "BEGIN TRANSACTION failed setting locale");
-        goto done;
-    }
+//     // need to update android_metadata and indexes atomically, so use a transaction...
+//     err = sqlite3_exec(handle, "BEGIN TRANSACTION", NULL, NULL, NULL);
+//     if (err != SQLITE_OK) {
+//         LOGE("BEGIN TRANSACTION failed setting locale\n");
+//         throw_sqlite3_exception(env, handle, "BEGIN TRANSACTION failed setting locale");
+//         goto done;
+//     }
 
-    err = register_localized_collators(handle, locale8, UTF16_STORAGE);
-    if (err != SQLITE_OK) {
-        LOGE("register_localized_collators() failed setting locale\n");
-        throw_sqlite3_exception(env, handle, "register_localized_collators() failed setting locale");
-        goto rollback;
-    }
+//     err = register_localized_collators(handle, locale8, UTF16_STORAGE);
+//     if (err != SQLITE_OK) {
+//         LOGE("register_localized_collators() failed setting locale\n");
+//         throw_sqlite3_exception(env, handle, "register_localized_collators() failed setting locale");
+//         goto rollback;
+//     }
 
-    err = sqlite3_exec(handle, "DELETE FROM " ANDROID_TABLE, NULL, NULL, NULL);
-    if (err != SQLITE_OK) {
-        LOGE("DELETE failed setting locale\n");
-        throw_sqlite3_exception(env, handle, "DELETE failed setting locale");
-        goto rollback;
-    }
+//     err = sqlite3_exec(handle, "DELETE FROM " ANDROID_TABLE, NULL, NULL, NULL);
+//     if (err != SQLITE_OK) {
+//         LOGE("DELETE failed setting locale\n");
+//         throw_sqlite3_exception(env, handle, "DELETE failed setting locale");
+//         goto rollback;
+//     }
 
-    static const char *sql = "INSERT INTO " ANDROID_TABLE " (locale) VALUES(?);";
-    err = sqlite3_prepare_v2(handle, sql, -1, &stmt, NULL);
-    if (err != SQLITE_OK) {
-        LOGE("sqlite3_prepare_v2(\"%s\") failed\n", sql);
-        throw_sqlite3_exception(env, handle, "sqlite3_prepare_v2() failed setting locale");
-        goto rollback;
-    }
+//     static const char *sql = "INSERT INTO " ANDROID_TABLE " (locale) VALUES(?);";
+//     err = sqlite3_prepare_v2(handle, sql, -1, &stmt, NULL);
+//     if (err != SQLITE_OK) {
+//         LOGE("sqlite3_prepare_v2(\"%s\") failed\n", sql);
+//         throw_sqlite3_exception(env, handle, "sqlite3_prepare_v2() failed setting locale");
+//         goto rollback;
+//     }
 
-    err = sqlite3_bind_text(stmt, 1, locale8, -1, SQLITE_TRANSIENT);
-    if (err != SQLITE_OK) {
-        LOGE("sqlite3_bind_text() failed setting locale\n");
-        throw_sqlite3_exception(env, handle, "sqlite3_bind_text() failed setting locale");
-        goto rollback;
-    }
+//     err = sqlite3_bind_text(stmt, 1, locale8, -1, SQLITE_TRANSIENT);
+//     if (err != SQLITE_OK) {
+//         LOGE("sqlite3_bind_text() failed setting locale\n");
+//         throw_sqlite3_exception(env, handle, "sqlite3_bind_text() failed setting locale");
+//         goto rollback;
+//     }
 
-    err = sqlite3_step(stmt);
-    if (err != SQLITE_OK && err != SQLITE_DONE) {
-        LOGE("sqlite3_step(\"%s\") failed setting locale\n", sql);
-        throw_sqlite3_exception(env, handle, "sqlite3_step() failed setting locale");
-        goto rollback;
-    }
+//     err = sqlite3_step(stmt);
+//     if (err != SQLITE_OK && err != SQLITE_DONE) {
+//         LOGE("sqlite3_step(\"%s\") failed setting locale\n", sql);
+//         throw_sqlite3_exception(env, handle, "sqlite3_step() failed setting locale");
+//         goto rollback;
+//     }
 
-    err = sqlite3_exec(handle, "REINDEX LOCALIZED", NULL, NULL, NULL);
-    if (err != SQLITE_OK) {
-        LOGE("REINDEX LOCALIZED failed\n");
-        throw_sqlite3_exception(env, handle, "REINDEX LOCALIZED failed");
-        goto rollback;
-    }
+//     err = sqlite3_exec(handle, "REINDEX LOCALIZED", NULL, NULL, NULL);
+//     if (err != SQLITE_OK) {
+//         LOGE("REINDEX LOCALIZED failed\n");
+//         throw_sqlite3_exception(env, handle, "REINDEX LOCALIZED failed");
+//         goto rollback;
+//     }
 
-    // all done, yay!
-    err = sqlite3_exec(handle, "COMMIT TRANSACTION", NULL, NULL, NULL);
-    if (err != SQLITE_OK) {
-        LOGE("COMMIT TRANSACTION failed setting locale\n");
-        throw_sqlite3_exception(env, handle, "COMMIT TRANSACTION failed setting locale");
-        goto done;
-    }
+//     // all done, yay!
+//     err = sqlite3_exec(handle, "COMMIT TRANSACTION", NULL, NULL, NULL);
+//     if (err != SQLITE_OK) {
+//         LOGE("COMMIT TRANSACTION failed setting locale\n");
+//         throw_sqlite3_exception(env, handle, "COMMIT TRANSACTION failed setting locale");
+//         goto done;
+//     }
 
-rollback:
-    if (err != SQLITE_OK) {
-        sqlite3_exec(handle, "ROLLBACK TRANSACTION", NULL, NULL, NULL);
-    }
+// rollback:
+//     if (err != SQLITE_OK) {
+//         sqlite3_exec(handle, "ROLLBACK TRANSACTION", NULL, NULL, NULL);
+//     }
 
-done:
-    if (locale8 != NULL) env->ReleaseStringUTFChars(localeString, locale8);
-    if (stmt != NULL) sqlite3_finalize(stmt);
-    if (meta != NULL) sqlite3_free_table(meta);
-}
+// done:
+//     if (locale8 != NULL) env->ReleaseStringUTFChars(localeString, locale8);
+//     if (stmt != NULL) sqlite3_finalize(stmt);
+//     if (meta != NULL) sqlite3_free_table(meta);
+// }
 
 static jint native_releaseMemory(JNIEnv *env, jobject clazz)
 {
@@ -621,15 +635,15 @@ static JNINativeMethod sMethods[] =
     {"native_execSQL", "(Ljava/lang/String;)V", (void *)native_execSQL},
     {"lastInsertRow", "()J", (void *)lastInsertRow},
     {"lastChangeCount", "()I", (void *)lastChangeCount},
-    {"native_setLocale", "(Ljava/lang/String;I)V", (void *)native_setLocale},
+    // {"native_setLocale", "(Ljava/lang/String;I)V", (void *)native_setLocale},
     {"native_getDbLookaside", "()I", (void *)native_getDbLookaside},
     {"releaseMemory", "()I", (void *)native_releaseMemory},
-    {"setICURoot", "(Ljava/lang/String;)V", (void *)setICURoot},
+    // {"setICURoot", "(Ljava/lang/String;)V", (void *)setICURoot},
     {"native_rawExecSQL", "(Ljava/lang/String;)V", (void *)native_rawExecSQL},
     {"native_status", "(IZ)I", (void *)native_status},
     {"native_key", "([C)V", (void *)native_key_char},
-    {"native_key", "(Ljava/lang/String;)V", (void *)native_key_str},
-    {"native_rekey", "([C)V", (void *)native_rekey_char},
+    //{"native_key", "(Ljava/lang/String;)V", (void *)native_key_str},
+    // {"native_rekey", "([C)V", (void *)native_rekey_char},
     {"native_rekey", "(Ljava/lang/String;)V", (void *)native_rekey_str},
 };
 
@@ -648,12 +662,8 @@ int register_android_database_SQLiteDatabase(JNIEnv *env)
         LOGE("Can't find SQLiteDatabase.mNativeHandle\n");
         return -1;
     }
-
-    return android::AndroidRuntime::registerNativeMethods(env, "net/sqlcipher/database/SQLiteDatabase", sMethods, NELEM(sMethods));
+    return env->RegisterNatives(clazz, sMethods, NELEM(sMethods));
 }
-
-
-
 
 //this code is not executed 
 extern "C" jint JNI_OnLoad(JavaVM* vm, void* reserved) 
@@ -670,13 +680,9 @@ extern "C" jint JNI_OnLoad(JavaVM* vm, void* reserved)
 	
 	register_android_database_SQLiteDatabase(env);
 	register_android_database_SQLiteCompiledSql(env);
-
-	register_android_database_SQLiteQuery(env);
-
+  register_android_database_SQLiteQuery(env);
 	register_android_database_SQLiteProgram(env);
-
 	register_android_database_SQLiteStatement(env);
-
 	register_android_database_CursorWindow(env);
 
 	//register_android_database_SQLiteDebug(env);

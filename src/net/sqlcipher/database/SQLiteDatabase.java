@@ -74,7 +74,7 @@ public class SQLiteDatabase extends SQLiteClosable {
     private static final int EVENT_DB_OPERATION = 52000;
     private static final int EVENT_DB_CORRUPT = 75004;
 
-    public static final String SQLCIPHER_ANDROID_VERSION = "3.3.1-2";
+    public static final String SQLCIPHER_ANDROID_VERSION = "3.4.0";
 
     // Stores reference to all databases opened in the current process.
     // (The referent Object is not used at this time.)
@@ -121,7 +121,7 @@ public class SQLiteDatabase extends SQLiteClosable {
         if (!isOpen()) {
             throw new SQLiteException("database not open");
         }
-        native_rekey(password);
+        native_rekey(String.valueOf(password));
     }
   
     private static void loadICUData(Context context, File workingDir) {
@@ -170,17 +170,19 @@ public class SQLiteDatabase extends SQLiteClosable {
     }
 
     public static synchronized void loadLibs (Context context, File workingDir) {
-        System.loadLibrary("stlport_shared");
-        System.loadLibrary("sqlcipher_android");
-        System.loadLibrary("database_sqlcipher");
+      System.loadLibrary("sqlcipher");
+      
+        // System.loadLibrary("stlport_shared");
+        // System.loadLibrary("sqlcipher_android");
+        // System.loadLibrary("database_sqlcipher");
 
-        boolean systemICUFileExists = new File("/system/usr/icu/icudt46l.dat").exists();
+        // boolean systemICUFileExists = new File("/system/usr/icu/icudt46l.dat").exists();
 
-        String icuRootPath = systemICUFileExists ? "/system/usr" : workingDir.getAbsolutePath();
-        setICURoot(icuRootPath);
-        if(!systemICUFileExists){
-            loadICUData(context, workingDir);
-        }
+        // String icuRootPath = systemICUFileExists ? "/system/usr" : workingDir.getAbsolutePath();
+        // setICURoot(icuRootPath);
+        // if(!systemICUFileExists){
+        //     loadICUData(context, workingDir);
+        // }
     }
 
     /**
@@ -2335,7 +2337,13 @@ public class SQLiteDatabase extends SQLiteClosable {
             mTimeOpened = getTime();
         }
         try {
-            setLocale(Locale.getDefault());
+          Cursor cursor = rawQuery("select count(*) from sqlite_master;", new String[]{});
+          if(cursor != null){
+            cursor.moveToFirst();
+            int count = cursor.getInt(0);
+            cursor.close();
+          }
+          //setLocale(Locale.getDefault());
         } catch (RuntimeException e) {
             Log.e(TAG, "Failed to setLocale() when constructing, closing the database", e);
             dbclose();
@@ -2811,9 +2819,7 @@ public class SQLiteDatabase extends SQLiteClosable {
 
     private native int native_status(int operation, boolean reset);
 
-    private native void native_key(char[] key) throws SQLException;
-    private native void native_key(String key) throws SQLException;
-
+  private native void native_key(char[] key) throws SQLException;
+  
     private native void native_rekey(String key) throws SQLException;
-    private native void native_rekey(char[] key) throws SQLException;
 }
