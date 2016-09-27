@@ -29,6 +29,10 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.UnsupportedEncodingException;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.Charset;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -54,27 +58,28 @@ import android.util.Config;
 import android.util.Log;
 import android.util.Pair;
 
+import java.io.UnsupportedEncodingException;
+
 /**
- * Exposes methods to manage a SQLite database.
+ * Exposes methods to manage a SQLCipher database.
  * <p>SQLiteDatabase has methods to create, delete, execute SQL commands, and
  * perform other common database management tasks.
- * <p>See the Notepad sample application in the SDK for an example of creating
- * and managing a database.
+ * <p>A call to <code>loadLibs(…)</code> should occur before attempting to
+ * create or open a database connection.
  * <p> Database names must be unique within an application, not across all
  * applications.
  *
- * <h3>Localized Collation - ORDER BY</h3>
- * <p>In addition to SQLite's default <code>BINARY</code> collator, Android supplies
- * two more, <code>LOCALIZED</code>, which changes with the system's current locale
- * if you wire it up correctly (XXX a link needed!), and <code>UNICODE</code>, which
- * is the Unicode Collation Algorithm and not tailored to the current locale.
  */
 public class SQLiteDatabase extends SQLiteClosable {
     private static final String TAG = "Database";
     private static final int EVENT_DB_OPERATION = 52000;
     private static final int EVENT_DB_CORRUPT = 75004;
+    private static final String KEY_ENCODING = "UTF-8";
 
-    public static final String SQLCIPHER_ANDROID_VERSION = "3.3.1-2";
+  /**
+   * The version number of the SQLCipher for Android Java client library.
+   */
+    public static final String SQLCIPHER_ANDROID_VERSION = "3.5.4";
 
     // Stores reference to all databases opened in the current process.
     // (The referent Object is not used at this time.)
@@ -102,7 +107,13 @@ public class SQLiteDatabase extends SQLiteClosable {
         if (!isOpen()) {
             throw new SQLiteException("database not open");
         }
-        native_rekey(password);
+        if (password != null) {
+          byte[] keyMaterial = getBytes(password.toCharArray());
+          rekey(keyMaterial);
+          for(byte data : keyMaterial) {
+            data = 0;
+          }
+        }
     }
 
     /**
@@ -121,7 +132,13 @@ public class SQLiteDatabase extends SQLiteClosable {
         if (!isOpen()) {
             throw new SQLiteException("database not open");
         }
-        native_rekey(password);
+        if (password != null) {
+          byte[] keyMaterial = getBytes(password);
+          rekey(keyMaterial);
+          for(byte data : keyMaterial) {
+            data = 0;
+          }
+        }     
     }
   
     private static void loadICUData(Context context, File workingDir) {
@@ -165,22 +182,30 @@ public class SQLiteDatabase extends SQLiteClosable {
       }
     }
 
+  /**
+   * Loads the native SQLCipher library into the application process.
+   */
     public static synchronized void loadLibs (Context context) {
         loadLibs(context, context.getFilesDir());
     }
 
+  /**
+   * Loads the native SQLCipher library into the application process.
+   */
     public static synchronized void loadLibs (Context context, File workingDir) {
-        System.loadLibrary("stlport_shared");
-        System.loadLibrary("sqlcipher_android");
-        System.loadLibrary("database_sqlcipher");
+      System.loadLibrary("sqlcipher");
+      
+        // System.loadLibrary("stlport_shared");
+        // System.loadLibrary("sqlcipher_android");
+        // System.loadLibrary("database_sqlcipher");
 
-        boolean systemICUFileExists = new File("/system/usr/icu/icudt46l.dat").exists();
+        // boolean systemICUFileExists = new File("/system/usr/icu/icudt46l.dat").exists();
 
-        String icuRootPath = systemICUFileExists ? "/system/usr" : workingDir.getAbsolutePath();
-        setICURoot(icuRootPath);
-        if(!systemICUFileExists){
-            loadICUData(context, workingDir);
-        }
+        // String icuRootPath = systemICUFileExists ? "/system/usr" : workingDir.getAbsolutePath();
+        // setICURoot(icuRootPath);
+        // if(!systemICUFileExists){
+        //     loadICUData(context, workingDir);
+        // }
     }
 
     /**
@@ -287,6 +312,11 @@ public class SQLiteDatabase extends SQLiteClosable {
      * Flag for {@link #openDatabase} to create the database file if it does not already exist.
      */
     public static final int CREATE_IF_NECESSARY = 0x10000000;     // update native code if changing
+
+    /**
+     * SQLite memory database name
+     */
+    public static final String MEMORY = ":memory:";
 
     /**
      * Indicates whether the most-recently started transaction has been marked as successful.
@@ -953,7 +983,7 @@ public class SQLiteDatabase extends SQLiteClosable {
      * @throws IllegalArgumentException if the database path is null
      */
     public static SQLiteDatabase openDatabase(String path, String password, CursorFactory factory, int flags) {
-      return openDatabase(path, password.toCharArray(), factory, flags, null);
+      return openDatabase(path, password, factory, flags, null);
     }
 
     /**
@@ -975,7 +1005,7 @@ public class SQLiteDatabase extends SQLiteClosable {
      * @throws IllegalArgumentException if the database path is null
      */
     public static SQLiteDatabase openDatabase(String path, char[] password, CursorFactory factory, int flags) {
-      return openDatabase(path, password, factory, flags, null);
+      return openDatabase(path, password, factory, flags, null, null);
     }
 
     /**
@@ -999,7 +1029,7 @@ public class SQLiteDatabase extends SQLiteClosable {
      * @throws IllegalArgumentException if the database path is null
      */
     public static SQLiteDatabase openDatabase(String path, String password, CursorFactory factory, int flags, SQLiteDatabaseHook hook) {
-      return openDatabase(path, password.toCharArray(), factory, flags, hook);
+      return openDatabase(path, password, factory, flags, hook, null);
     }
 
     /**
@@ -1016,16 +1046,14 @@ public class SQLiteDatabase extends SQLiteClosable {
      *            cursor when query is called, or null for default
      * @param flags to control database access mode and other options
      * @param hook to run on pre/post key events (may be null)
-     * @param errorHandler The {@link DatabaseErrorHandler} to be used when sqlite reports database
-     * corruption (or null for default).
      *
      * @return the newly opened database
      *
      * @throws SQLiteException if the database cannot be opened
      * @throws IllegalArgumentException if the database path is null
      */
-    public static SQLiteDatabase openDatabase(String path, char[] password, CursorFactory factory, int flags, SQLiteDatabaseHook databaseHook) {
-        return openDatabase(path, password, factory, flags, databaseHook, new DefaultDatabaseErrorHandler());
+    public static SQLiteDatabase openDatabase(String path, char[] password, CursorFactory factory, int flags, SQLiteDatabaseHook hook) {
+        return openDatabase(path, password, factory, flags, hook, null);
     }
 
     /**
@@ -1052,7 +1080,7 @@ public class SQLiteDatabase extends SQLiteClosable {
      */
     public static SQLiteDatabase openDatabase(String path, String password, CursorFactory factory, int flags,
                                               SQLiteDatabaseHook hook, DatabaseErrorHandler errorHandler) {
-      return openDatabase(path, password.toCharArray(), factory, flags, hook, errorHandler);
+      return openDatabase(path, password == null ? null : password.toCharArray(), factory, flags, hook, errorHandler);
     }
 
     /**
@@ -1080,10 +1108,11 @@ public class SQLiteDatabase extends SQLiteClosable {
     public static SQLiteDatabase openDatabase(String path, char[] password, CursorFactory factory, int flags,
                                               SQLiteDatabaseHook hook, DatabaseErrorHandler errorHandler) {
         SQLiteDatabase sqliteDatabase = null;
+        DatabaseErrorHandler myErrorHandler = (errorHandler != null) ? errorHandler : new DefaultDatabaseErrorHandler();
 
         try {
             // Open the database.
-            sqliteDatabase = new SQLiteDatabase(path, factory, flags, errorHandler);
+            sqliteDatabase = new SQLiteDatabase(path, factory, flags, myErrorHandler);
             sqliteDatabase.openDatabaseInternal(password, hook);
         } catch (SQLiteDatabaseCorruptException e) {
             // Try to recover from this, if possible.
@@ -1093,10 +1122,10 @@ public class SQLiteDatabase extends SQLiteClosable {
             // NOTE: if this errorHandler.onCorruption() throws the exception _should_
             // bubble back to the original caller.
             // DefaultDatabaseErrorHandler deletes the corrupt file, EXCEPT for memory database
-            errorHandler.onCorruption(sqliteDatabase);
+            myErrorHandler.onCorruption(sqliteDatabase);
 
             // try *once* again:
-            sqliteDatabase = new SQLiteDatabase(path, factory, flags, errorHandler);
+            sqliteDatabase = new SQLiteDatabase(path, factory, flags, myErrorHandler);
             sqliteDatabase.openDatabaseInternal(password, hook);
         }
 
@@ -1118,7 +1147,7 @@ public class SQLiteDatabase extends SQLiteClosable {
      * Equivalent to openDatabase(file.getPath(), password, factory, CREATE_IF_NECESSARY, databaseHook).
      */
     public static SQLiteDatabase openOrCreateDatabase(File file, String password, CursorFactory factory, SQLiteDatabaseHook databaseHook) {
-        return openOrCreateDatabase(file.getPath(), password, factory, databaseHook);
+        return openOrCreateDatabase(file, password, factory, databaseHook, null);
     }
 
     /**
@@ -1133,12 +1162,12 @@ public class SQLiteDatabase extends SQLiteClosable {
      */
     public static SQLiteDatabase openOrCreateDatabase(File file, String password, CursorFactory factory, SQLiteDatabaseHook databaseHook,
                                                       DatabaseErrorHandler errorHandler) {
-        return openDatabase(file.getPath(), password.toCharArray(), factory, CREATE_IF_NECESSARY, databaseHook, errorHandler);
+        return openOrCreateDatabase(file == null ? null : file.getPath(), password, factory, databaseHook, errorHandler);
     }
 
     public static SQLiteDatabase openOrCreateDatabase(String path, String password, CursorFactory factory, SQLiteDatabaseHook databaseHook,
                                                       DatabaseErrorHandler errorHandler) {
-        return openDatabase(path, password.toCharArray(), factory, CREATE_IF_NECESSARY, databaseHook, errorHandler);
+        return openDatabase(path, password == null ? null : password.toCharArray(), factory, CREATE_IF_NECESSARY, databaseHook, errorHandler);
     }
 
     public static SQLiteDatabase openOrCreateDatabase(String path, char[] password, CursorFactory factory, SQLiteDatabaseHook databaseHook) {
@@ -1154,14 +1183,14 @@ public class SQLiteDatabase extends SQLiteClosable {
      * Equivalent to openDatabase(file.getPath(), password, factory, CREATE_IF_NECESSARY).
      */
     public static SQLiteDatabase openOrCreateDatabase(File file, String password, CursorFactory factory) {
-        return openOrCreateDatabase(file.getPath(), password, factory, null);
+        return openOrCreateDatabase(file, password, factory, null);
     }
 
     /**
      * Equivalent to openDatabase(path, password, factory, CREATE_IF_NECESSARY).
      */
     public static SQLiteDatabase openOrCreateDatabase(String path, String password, CursorFactory factory) {
-      return openDatabase(path, password.toCharArray(), factory, CREATE_IF_NECESSARY, null);
+      return openDatabase(path, password, factory, CREATE_IF_NECESSARY, null);
     }
 
     /**
@@ -1188,7 +1217,7 @@ public class SQLiteDatabase extends SQLiteClosable {
      */
     public static SQLiteDatabase create(CursorFactory factory, String password) {
         // This is a magic string with special meaning for SQLite.
-      return openDatabase(":memory:", password.toCharArray(), factory, CREATE_IF_NECESSARY);
+      return openDatabase(MEMORY, password == null ? null : password.toCharArray(), factory, CREATE_IF_NECESSARY);
     }
 
     /**
@@ -1207,7 +1236,7 @@ public class SQLiteDatabase extends SQLiteClosable {
      * @throws SQLiteException if the database cannot be opened 
      */
     public static SQLiteDatabase create(CursorFactory factory, char[] password) {
-        return openDatabase(":memory:", password, factory, CREATE_IF_NECESSARY);
+        return openDatabase(MEMORY, password, factory, CREATE_IF_NECESSARY);
     }
 
 
@@ -2318,33 +2347,94 @@ public class SQLiteDatabase extends SQLiteClosable {
         mErrorHandler = errorHandler;
     }
 
-    private void openDatabaseInternal(char[] password, SQLiteDatabaseHook databaseHook) {
-        dbopen(mPath, mFlags);
-
-        if(databaseHook != null) {
-            databaseHook.preKey(this);
-        }
-
-        native_key(password);
-
-        if(databaseHook != null){
-            databaseHook.postKey(this);
-        }
-
-        if (SQLiteDebug.DEBUG_SQL_CACHE) {
-            mTimeOpened = getTime();
-        }
-        try {
-            setLocale(Locale.getDefault());
-        } catch (RuntimeException e) {
-            Log.e(TAG, "Failed to setLocale() when constructing, closing the database", e);
-            dbclose();
-            if (SQLiteDebug.DEBUG_SQL_CACHE) {
-                mTimeClosed = getTime();
+  private void openDatabaseInternal(final char[] password, SQLiteDatabaseHook hook) {
+    boolean shouldCloseConnection = true;
+    final byte[] keyMaterial = getBytes(password);
+    dbopen(mPath, mFlags);
+    try {
+      
+      keyDatabase(hook, new Runnable() {
+          public void run() {
+            if(keyMaterial != null && keyMaterial.length > 0) {
+              key(keyMaterial);
             }
-            throw e;
+          }
+        });
+      shouldCloseConnection = false;
+      
+    } catch(RuntimeException ex) {
+
+      if(containsNull(password)) {
+        keyDatabase(hook, new Runnable() {
+            public void run() {
+              if(password != null) {
+                key_mutf8(password);
+              }
+            }
+          });
+        if(keyMaterial != null && keyMaterial.length > 0) {
+          rekey(keyMaterial);
         }
+        shouldCloseConnection = false;
+      } else {
+        throw ex;
+      }
+
+    } finally {
+      if(shouldCloseConnection) {
+        dbclose();
+        if (SQLiteDebug.DEBUG_SQL_CACHE) {
+          mTimeClosed = getTime();
+        }
+      }
+      if(keyMaterial != null && keyMaterial.length > 0) {
+        for(byte data : keyMaterial) {
+          data = 0;
+        }
+      }
     }
+    
+  }
+
+  private boolean containsNull(char[] data) {
+    char defaultValue = '\u0000';
+    boolean status = false;
+    if(data != null && data.length > 0) {
+      for(char datum : data) {
+        if(datum == defaultValue) {
+          status = true;
+          break;
+        }
+      }
+    }
+    return status;
+  }
+  
+  private void keyDatabase(SQLiteDatabaseHook databaseHook, Runnable keyOperation) {
+    if(databaseHook != null) {
+      databaseHook.preKey(this);
+    }
+    if(keyOperation != null){
+      keyOperation.run();
+    }
+    if(databaseHook != null){
+      databaseHook.postKey(this);
+    }
+    if (SQLiteDebug.DEBUG_SQL_CACHE) {
+      mTimeOpened = getTime();
+    }
+    try {
+      Cursor cursor = rawQuery("select count(*) from sqlite_master;", new String[]{});
+      if(cursor != null){
+        cursor.moveToFirst();
+        int count = cursor.getInt(0);
+        cursor.close();
+      }
+    } catch (RuntimeException e) {
+      Log.e(TAG, e.getMessage(), e);
+      throw e;
+    }
+  }
 
     private String getTime() {
         return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS ").format(System.currentTimeMillis());
@@ -2739,6 +2829,15 @@ public class SQLiteDatabase extends SQLiteClosable {
         return attachedDbs;
     }
 
+    private byte[] getBytes(char[] data) {
+      if(data == null || data.length == 0) return null;
+      CharBuffer charBuffer = CharBuffer.wrap(data);
+      ByteBuffer byteBuffer = Charset.forName(KEY_ENCODING).encode(charBuffer);
+      byte[] result =  new byte[byteBuffer.limit()];
+      byteBuffer.get(result);
+      return result;
+    }
+
     /**
      * Sets the root directory to search for the ICU data file
      */
@@ -2812,8 +2911,10 @@ public class SQLiteDatabase extends SQLiteClosable {
     private native int native_status(int operation, boolean reset);
 
     private native void native_key(char[] key) throws SQLException;
-    private native void native_key(String key) throws SQLException;
-
+  
     private native void native_rekey(String key) throws SQLException;
-    private native void native_rekey(char[] key) throws SQLException;
+
+  private native void key(byte[] key) throws SQLException;
+  private native void key_mutf8(char[] key) throws SQLException;
+  private native void rekey(byte[] key) throws SQLException;
 }

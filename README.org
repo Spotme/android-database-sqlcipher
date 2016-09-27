@@ -4,8 +4,8 @@
 
 *** Compatibility
 
-    SQLCipher for Android runs on Android 2.1 - 6.0, both x86 and ARM architectures.
-
+    SQLCipher for Android runs on Android 2.1 - Android N, for =armeabi=, =armeabi-v7a=, and =x86= architectures. SQLCipher for Android does not currently include 64-bit native libaries, however it will work on 64-bit devices. Please read [[https://discuss.zetetic.net/t/sqlcipher-for-android-native-library-support/1440][this]] for additional details.
+    
 *** Contributions
 
 We welcome contributions, to contribute to SQLCipher for Android, a [[https://www.zetetic.net/contributions/][contributor agreement]] needs to be submitted.  All submissions should be based on the =master= branch.
@@ -59,7 +59,7 @@ Notepadbot is a sample application pulled from the standard Android samples code
 
 *** Building
 
-In order to build android-database-sqlcipher from source you will need both the Android SDK as well as Android NDK.  We currently recommend using Android NDK version r9d as more current versions such as r10d and r10e cause crashes on the x86 platform.  To complete the =make init= command, you will need the =android-19= platform installed from the SDK.  Once you have cloned the repo, change directory into the root of the repository and run the following commands:
+In order to build android-database-sqlcipher from source you will need both the Android SDK as well as Android NDK.  We currently recommend using Android NDK version r11c.  To complete the =make init= command, you will need the =android-19= platform installed from the SDK.  The =make init= command will build OpenSSL for the required platforms, thus the =ANDROID_NDK_ROOT= environment variable must be defined which should point to your NDK root. Once you have cloned the repo, change directory into the root of the repository and run the following commands:
 
 :  # this only needs to be done once
 :  make init
