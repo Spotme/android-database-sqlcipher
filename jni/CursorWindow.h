@@ -29,11 +29,13 @@
 // #include <binder/IMemory.h>
 // #include <utils/RefBase.h>
 
-#define DEFAULT_WINDOW_SIZE 4096
-#define MAX_WINDOW_SIZE (1024 * 1024)
-#define WINDOW_ALLOCATION_SIZE 4096
+#define INCREASE_SIZE 48
 
-#define ROW_SLOT_CHUNK_NUM_ROWS 16
+#define DEFAULT_WINDOW_SIZE (INCREASE_SIZE * 4096)
+#define MAX_WINDOW_SIZE (INCREASE_SIZE * 1024 * 1024)
+#define WINDOW_ALLOCATION_SIZE (INCREASE_SIZE * 4096)
+
+#define ROW_SLOT_CHUNK_NUM_ROWS (INCREASE_SIZE * 16)
 
 // Row slots are allocated in chunks of ROW_SLOT_CHUNK_NUM_ROWS,
 // with an offset after the rows that points to the next chunk
